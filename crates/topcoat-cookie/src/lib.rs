@@ -586,6 +586,39 @@ mod tests {
     }
 
     #[test]
+    fn prefixed_cookies_round_trip_with_bare_and_prefixed_names() {
+        for (prefix, prefixed_name) in [
+            (Prefix::Host, "__Host-session"),
+            (Prefix::Secure, "__Secure-session"),
+        ] {
+            for conform in [Conform::Default, Conform::Override] {
+                for name in ["session", prefixed_name] {
+                    let writer = cx_with(&[]);
+                    Prefixed::new(cookies(&writer), prefix, conform).add((name, "abc"));
+                    let set = set_cookies(&writer);
+                    let echoed = pair(&set[0]);
+                    assert_eq!(echoed, format!("{prefixed_name}=abc"));
+
+                    let reader = cx_with(&[echoed]);
+                    let jar = Prefixed::new(cookies(&reader), prefix, conform);
+                    for lookup in ["session", prefixed_name] {
+                        let cookie = jar.get(lookup).expect("cookie should round trip");
+                        assert_eq!(cookie.name(), "session");
+                        assert_eq!(cookie.value(), "abc");
+                    }
+
+                    jar.remove((name, ""));
+                    assert!(jar.get(name).is_none());
+                    let removed = set_cookies(&reader);
+                    let removal = Cookie::parse(removed[0].as_str()).unwrap();
+                    assert_eq!(removal.name(), prefixed_name);
+                    assert_eq!(removal.max_age(), Some(time::Duration::ZERO));
+                }
+            }
+        }
+    }
+
+    #[test]
     fn signed_cookie_round_trips() {
         let key = Key::generate();
 
